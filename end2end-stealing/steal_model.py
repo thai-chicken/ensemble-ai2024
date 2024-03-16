@@ -1078,6 +1078,9 @@ def train(
             GaussianBlur(kernel_size=int(0.1 * size)),
         ]
     )
+    normalize = transforms.Normalize(
+        mean=[0.3175, 0.2710, 0.3050], std=[0.3098, 0.2590, 0.2925]
+    )
 
     tloss = 0
 
@@ -1173,6 +1176,7 @@ def train(
             aug_image = to_pil(image)
             aug_image = data_transforms(aug_image)
             aug_image = to_tensor(aug_image)
+            aug_image = normalize(aug_image)
             augment_images.append(aug_image)
 
         augment_images = torch.stack(augment_images)
@@ -1187,8 +1191,6 @@ def train(
         # stolen_features = stealing_model(images)
 
         if args.losstype == "mse":
-            print(stolen_features.shape)
-            print(victim_features.shape)
             loss = criterion(stolen_features, victim_features)
         elif args.losstype == "infonce":
             all_features = torch.cat([stolen_features, victim_features], dim=0)
