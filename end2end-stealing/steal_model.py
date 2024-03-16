@@ -473,9 +473,9 @@ def main_worker(gpu, ngpus_per_node, buckets_covered, args):
         # acc1 = validate(val_loader, model, criterion, args)
 
         # # remember best acc@1 and save checkpoint
-        is_best = l2loss > best_acc1
+        is_best = l2loss < best_acc1
         print(f"{is_best=}")
-        best_acc1 = max(l2loss, best_acc1)
+        best_acc1 = min(l2loss, best_acc1)
 
         if is_best:
             save_checkpoint(
