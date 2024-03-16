@@ -9,11 +9,12 @@ python3 steal_model.py simsiam  \
 --data data \
 --batch-size 25 \
 --lr 0.1 \
---losstype 'infonce' \
+--losstype 'mse' \
 --datasetsteal 'imagenet' \
 --workers 8 \
 --useaug 'False' \
 --temperature 0.25 \
 --epochs 100 \
 --gpu 0 \
---pretrained ./pretrained_weights/checkpoint_0099.pth.tar
+--pretrained ./pretrained_weights/checkpoint_0099.pth.tar \
+--resume

@@ -14,7 +14,7 @@ def main():
     parser.add_argument(
         "--model_to_steal",
         default="simsiam",
-        choices=["dino", "simsiam"],
+        choices=["dino", "simsiam", "hackathon"],
         type=str,
         help="Possible values: simsiam or dino",
     )
