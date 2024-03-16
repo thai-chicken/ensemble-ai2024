@@ -344,8 +344,8 @@ def add_common_arguments(parser):
 class TaskDataset(torch.utils.data.Dataset):
     def __init__(self, root, transform=None):
 
-        self.imgs = torch.load(os.path.join(root, "images.pt"))
-        self.features = torch.load(os.path.join(root, "features.pt"))
+        self.imgs = torch.load(os.path.join(root, "images.pt")).float()
+        self.features = torch.load(os.path.join(root, "features.pt")).float()
         self.transform = transform
 
     def __getitem__(self, idx):
@@ -609,7 +609,7 @@ def define_optimizer(args, stealing_model, init_lr):
 
 def resume_from_checkpoint(args, stealing_model, optimizer):
     global best_acc1
-    checkloc = f"{args.pathpre}/{args.model_to_steal}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}.pth.tar"
+    checkloc = args.pretrained
     if os.path.isfile(checkloc):
         print("=> loading checkpoint '{}'".format(checkloc))
         if args.gpu is None:
@@ -619,7 +619,7 @@ def resume_from_checkpoint(args, stealing_model, optimizer):
             loc = "cuda:{}".format(args.gpu)
             checkpoint = torch.load(checkloc, map_location=loc)
         args.start_epoch = checkpoint["epoch"]
-        best_acc1 = 0
+        best_acc1 = float("inf")
         stealing_model.load_state_dict(checkpoint["state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         print(
@@ -929,12 +929,12 @@ def save_checkpoint(state, is_best, args, model, epoch):
     if is_best:
         torch.save(
             state,
-            f"{args.pathpre}/{args.save_dir}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_epoch{epoch}.pth.tar",
+            f"{args.pathpre}/{args.save_dir}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}.pth.tar",
         )
         torch.onnx.export(
             model.cpu(),
             torch.randn(1, 3, 32, 32),
-            f"{args.pathpre}/{args.save_dir}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_epoch{epoch}.onnx",
+            f"{args.pathpre}/{args.save_dir}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}.onnx",
             export_params=True,
             input_names=["x"],
         )
@@ -1011,7 +1011,7 @@ def evaluate(
     num = 0
     stealing_model.eval()
 
-
+    l2 = nn.MSELoss()
     tloss = 0
 
     # collect=[]
@@ -1027,7 +1027,7 @@ def evaluate(
                 stolen_features = stolen_features.cuda(args.gpu, non_blocking=True)
                 victim_features = victim_features.cuda(args.gpu, non_blocking=True)
 
-            loss = criterion(stolen_features, victim_features)
+            loss = l2(stolen_features, victim_features)
 
             losses.update(loss.item(), images.size(0))
             tloss += loss.item()
