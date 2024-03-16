@@ -8,7 +8,7 @@ import sys
 import time
 import warnings
 from collections import defaultdict
-
+import wandb
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
@@ -33,7 +33,7 @@ from utils import print_args
 from models.resnet_simclr import ResNetSimCLRV2
 from models.simplenet import SimpleNet
 
-best_acc1 = 0
+best_acc1 = float("inf")
 
 
 def main():
@@ -358,6 +358,9 @@ class TaskDataset(torch.utils.data.Dataset):
 def main_worker(gpu, ngpus_per_node, buckets_covered, args):
     global best_acc1
     args.gpu = gpu
+    wandb.login()
+    wandb.init(project="ensemble-ai2024", entity="barto")
+
     log_dir = f"{args.pathpre}/hackathon/"
     logname = f"stealing_{args.datasetsteal}_{args.num_queries}_{args.losstype}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}.log"
     os.makedirs(log_dir, exist_ok=True)
@@ -468,6 +471,7 @@ def main_worker(gpu, ngpus_per_node, buckets_covered, args):
         )
 
         print(f"Epoch {epoch} L2 loss: {l2loss}")
+        wandb.log({"l2_loss": l2loss}, step=epoch)
 
         # # evaluate on validation set (doesnt apply when stealing since a linear classifier is further needed)
         # acc1 = validate(val_loader, model, criterion, args)
@@ -487,7 +491,10 @@ def main_worker(gpu, ngpus_per_node, buckets_covered, args):
                 },
                 is_best=is_best,
                 args=args,
+                model=stealing_model,
+                epoch=epoch + 1,
             )
+            stealing_model.cuda()
 
 
 def build_victim_model(args):
@@ -913,12 +920,19 @@ def accuracy(output, target, topk=(1,)):
         return res
 
 
-def save_checkpoint(state, is_best, args):
+def save_checkpoint(state, is_best, args, model, epoch):
     os.makedirs(f"{args.pathpre}/{args.model_to_steal}", exist_ok=True)
     if is_best:
         torch.save(
             state,
-            f"{args.pathpre}/{args.model_to_steal}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}.pth.tar",
+            f"{args.pathpre}/{args.model_to_steal}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_epoch{epoch}.pth.tar",
+        )
+        torch.onnx.export(
+            model.cpu(),
+            torch.randn(1, 3, 32, 32),
+            f"{args.pathpre}/{args.model_to_steal}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_epoch{epoch}.onnx",
+            export_params=True,
+            input_names=["x"],
         )
 
 
