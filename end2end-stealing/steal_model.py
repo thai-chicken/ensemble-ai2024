@@ -118,7 +118,7 @@ def add_dino_arguments(parser_dino):
         "--avgpool_patchtokens",
         default=False,
         type=utils_dino.bool_flag,
-        help="""Whether ot not to concatenate the global average pooled features to the [CLS] token.	
+        help="""Whether ot not to concatenate the global average pooled features to the [CLS] token.
             We typically set this to False for ViT-Small and to True with ViT-Base.""",
     )
     parser_dino.add_argument(
@@ -337,6 +337,24 @@ def add_common_arguments(parser):
     )
 
 
+class TaskDataset(torch.utils.data.Dataset):
+    def __init__(self, root, transform=None):
+
+        self.imgs = torch.load(os.path.join(root, "images.pt"))
+        self.features = torch.load(os.path.join(root, "features.pt"))
+        self.transform = transform
+
+    def __getitem__(self, idx):
+        img = self.imgs[idx]
+        if self.transform is not None:
+            img = self.transform(img)
+        label = self.features[idx]
+        return img, label
+
+    def __len__(self):
+        return len(self.imgs)
+
+
 def main_worker(gpu, ngpus_per_node, buckets_covered, args):
     global best_acc1
     args.gpu = gpu
@@ -377,13 +395,13 @@ def main_worker(gpu, ngpus_per_node, buckets_covered, args):
 
     # create models
     print("=> loading model '{}'".format(args.arch))
-    victim_model = build_victim_model(args)
+    # victim_model = build_victim_model(args)
 
     # Stealing model initialzied
     stealing_model = build_stealing_model(args)
 
-    stealing_model, victim_model = initialize_models(
-        stealing_model, victim_model, ngpus_per_node, args
+    stealing_model = initialize_models(
+        stealing_model, ngpus_per_node, args
     )
 
     # infer learning rate before changing batch size
@@ -401,25 +419,14 @@ def main_worker(gpu, ngpus_per_node, buckets_covered, args):
     cudnn.benchmark = True
 
     # Data loading code
-    train_dataset, val_dataset, val_loader = load_dataset(args)
+    train_dataset = TaskDataset(args.data, transform=None)
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     else:
         train_sampler = None
 
-    if args.useval == "True" and args.dataset == "imagenet":
-        query_loader = torch.utils.data.DataLoader(
-            val_dataset,
-            batch_size=args.batch_size,
-            shuffle=False,  # (train_sampler is None),
-            num_workers=args.workers,
-            pin_memory=True,
-            sampler=train_sampler,
-            drop_last=True,
-        )
-    else:
-        query_loader = torch.utils.data.DataLoader(
+    query_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=args.batch_size,
             shuffle=False,  # (train_sampler is None),
@@ -429,11 +436,11 @@ def main_worker(gpu, ngpus_per_node, buckets_covered, args):
             drop_last=True,
         )
 
-    if args.evaluate:
-        validate(val_loader, stealing_model, criterion, args)
-        return
+    # if args.evaluate:
+    #     validate(val_loader, stealing_model, criterion, args)
+    #     return
 
-    victim_model.eval()
+    # victim_model.eval()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
@@ -443,7 +450,6 @@ def main_worker(gpu, ngpus_per_node, buckets_covered, args):
         train(
             query_loader,
             stealing_model,
-            victim_model,
             criterion,
             optimizer,
             epoch,
@@ -533,7 +539,7 @@ def build_stealing_model(args):
     # replace with resnet from simsiam
 
 
-def initialize_models(stealing_model, victim_model, ngpus_per_node, args):
+def initialize_models(stealing_model, ngpus_per_node, args):
     is_simsiam = args.model_to_steal == "simsiam"
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
@@ -550,25 +556,25 @@ def initialize_models(stealing_model, victim_model, ngpus_per_node, args):
             stealing_model = torch.nn.parallel.DistributedDataParallel(
                 stealing_model, device_ids=[args.gpu]
             )
-            if is_simsiam:
-                victim_model.cuda(args.gpu)
-                victim_model = torch.nn.parallel.DistributedDataParallel(
-                    victim_model, device_ids=[args.gpu]
-                )
+            # if is_simsiam:
+            #     victim_model.cuda(args.gpu)
+            #     victim_model = torch.nn.parallel.DistributedDataParallel(
+            #         victim_model, device_ids=[args.gpu]
+            #     )
         else:
-            victim_model.cuda()
+            # victim_model.cuda()
             # DistributedDataParallel will divide and allocate batch_size to all
             # available GPUs if device_ids are not set
             stealing_model = torch.nn.parallel.DistributedDataParallel(stealing_model)
-            if is_simsiam:
-                stealing_model.cuda()
-                victim_model = torch.nn.parallel.DistributedDataParallel(victim_model)
+            # if is_simsiam:
+                # stealing_model.cuda()
+                # victim_model = torch.nn.parallel.DistributedDataParallel(victim_model)
 
     elif args.gpu is not None:
         torch.cuda.set_device(args.gpu)
         stealing_model = stealing_model.cuda(args.gpu)
-        if is_simsiam:
-            victim_model = victim_model.cuda(args.gpu)
+        # if is_simsiam:
+            # victim_model = victim_model.cuda(args.gpu)
     else:
         # DataParallel will divide and allocate batch_size to all available GPUs
         if args.arch.startswith("alexnet") or args.arch.startswith("vgg"):
@@ -576,10 +582,10 @@ def initialize_models(stealing_model, victim_model, ngpus_per_node, args):
             stealing_model.cuda()
         else:
             stealing_model = torch.nn.DataParallel(stealing_model).cuda()
-            if is_simsiam:
-                victim_model = torch.nn.DataParallel(victim_model).cuda()
+            # if is_simsiam:
+                # victim_model = torch.nn.DataParallel(victim_model).cuda()
 
-    return stealing_model, victim_model
+    return stealing_model
 
 
 def define_criterion(args):
@@ -971,30 +977,29 @@ def info_nce_loss(features, args):
 def train(
     train_loader,
     stealing_model,
-    victim_model,
     criterion,
     optimizer,
     epoch,
     buckets_covered,
     args,
 ):
-    sybil_params = []
-    for sybil_no in range(args.n_sybils - 1):
-        mapper = torch.load(
-            f"{args.prefix}/resources/mapper/{args.model_to_steal}/mapper_{args.num_queries_mapping}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_no_{sybil_no}"
-        ).cuda()
-        affine_transform = np.load(
-            f"{args.prefix}/resources/transformations/{args.model_to_steal}/affine_transform_{args.num_queries_mapping}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_no_{sybil_no}.npz"
-        )
-        A = torch.Tensor(affine_transform["A"]).cuda()
-        B = torch.Tensor(affine_transform["B"]).cuda()
+    # sybil_params = []
+    # for sybil_no in range(args.n_sybils - 1):
+    #     mapper = torch.load(
+    #         f"{args.prefix}/resources/mapper/{args.model_to_steal}/mapper_{args.num_queries_mapping}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_no_{sybil_no}"
+    #     ).cuda()
+    #     affine_transform = np.load(
+    #         f"{args.prefix}/resources/transformations/{args.model_to_steal}/affine_transform_{args.num_queries_mapping}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_no_{sybil_no}.npz"
+    #     )
+    #     A = torch.Tensor(affine_transform["A"]).cuda()
+    #     B = torch.Tensor(affine_transform["B"]).cuda()
 
-        sybil_params.append({"mapper": mapper, "A": A, "B": B})
+    #     sybil_params.append({"mapper": mapper, "A": A, "B": B})
 
-    if args.n_sybils > 1:
-        batches_for_mapping = int(np.ceil(args.num_queries_mapping / args.batch_size))
+    # if args.n_sybils > 1:
+    #     batches_for_mapping = int(np.ceil(args.num_queries_mapping / args.batch_size))
 
-        print(f"batches_for_mapping {batches_for_mapping}")
+    #     print(f"batches_for_mapping {batches_for_mapping}")
 
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
@@ -1011,7 +1016,7 @@ def train(
     num = 0
     stealing_model.train()
 
-    size = 224
+    size = 32
     s = 1
     color_jitter = transforms.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
     to_tensor = transforms.ToTensor()
@@ -1029,26 +1034,26 @@ def train(
     tloss = 0
 
     # collect=[]
-    for i, (images, classes) in enumerate(train_loader):
-        if args.n_sybils > 1:
-            batches_per_attacker = int(
-                np.ceil((args.num_queries / args.batch_size) // args.n_sybils)
-            )
-        else:
-            batches_per_attacker = int((args.num_queries / args.batch_size)) + 1
+    for i, (images, victim_features) in enumerate(train_loader):
+        # if args.n_sybils > 1:
+        #     batches_per_attacker = int(
+        #         np.ceil((args.num_queries / args.batch_size) // args.n_sybils)
+        #     )
+        # else:
+        batches_per_attacker = int((args.num_queries / args.batch_size)) + 1
 
         # skip batches used for remapping
-        skip_batches = any(
-            [
-                (sybil_no * batches_per_attacker + batches_for_mapping) > i
-                and i >= sybil_no * batches_per_attacker
-                for sybil_no in range(1, args.n_sybils)
-            ]
-        )
-        if args.n_sybils > 1 and skip_batches:
-            if i % 10 == 0:
-                print(i)
-            continue
+        # skip_batches = any(
+        #     [
+        #         (sybil_no * batches_per_attacker + batches_for_mapping) > i
+        #         and i >= sybil_no * batches_per_attacker
+        #         for sybil_no in range(1, args.n_sybils)
+        #     ]
+        # )
+        # if args.n_sybils > 1 and skip_batches:
+        #     if i % 10 == 0:
+        #         print(i)
+        #     continue
 
         # measure data loading time
         data_time.update(time.time() - end)
@@ -1057,77 +1062,82 @@ def train(
             images = images.cuda(args.gpu, non_blocking=True)
 
         # compute output
-        with torch.no_grad():
-            if args.model_to_steal == "dino" and "vit" in args.archdino:
-                intermediate_output = victim_model.get_intermediate_layers(
-                    images, args.n_last_blocks
-                )
-                victim_features = torch.cat(
-                    [x[:, 0] for x in intermediate_output], dim=-1
-                )
-                if args.avgpool_patchtokens:
-                    victim_features = torch.cat(
-                        (
-                            victim_features.unsqueeze(-1),
-                            torch.mean(intermediate_output[-1][:, 1:], dim=1).unsqueeze(
-                                -1
-                            ),
-                        ),
-                        dim=-1,
-                    )
-                    victim_features = victim_features.reshape(
-                        victim_features.shape[0], -1
-                    )
-            else:
-                victim_features = victim_model(images)
+        # with torch.no_grad():
+            # if args.model_to_steal == "dino" and "vit" in args.archdino:
+                # intermediate_output = victim_model.get_intermediate_layers(
+                #     images, args.n_last_blocks
+                # )
+                # victim_features = torch.cat(
+                #     [x[:, 0] for x in intermediate_output], dim=-1
+                # )
+                # if args.avgpool_patchtokens:
+                #     victim_features = torch.cat(
+                #         (
+                #             victim_features.unsqueeze(-1),
+                #             torch.mean(intermediate_output[-1][:, 1:], dim=1).unsqueeze(
+                #                 -1
+                #             ),
+                #         ),
+                #         dim=-1,
+                #     )
+                #     victim_features = victim_features.reshape(
+                #         victim_features.shape[0], -1
+                #     )
+            # else:
+            #     victim_features = victim_model(images)
             # collect.append(victim_features.cpu().numpy())
-        if args.usedefence == "True":
-            g_cuda = torch.Generator()
-            g_cuda.manual_seed(i)
-            if args.n_sybils > 1:
-                stdev_value = get_stdev(
-                    i % batches_per_attacker,
-                    buckets_covered,
-                    args.lam,
-                    args.alpha,
-                    args.beta,
-                )
-            else:
-                stdev_value = get_stdev(
-                    i, buckets_covered, args.lam, args.alpha, args.beta
-                )
-            # print(i,stdev_value)
-            # print(torch.normal(0,stdev_value,size=victim_features.shape, generator=g_cuda))
-            victim_features = (
-                victim_features
-                + torch.normal(
-                    0, stdev_value, size=victim_features.shape, generator=g_cuda
-                ).cuda()
-            )
+        # if args.usedefence == "True":
+        #     g_cuda = torch.Generator()
+        #     g_cuda.manual_seed(i)
+        #     if args.n_sybils > 1:
+        #         stdev_value = get_stdev(
+        #             i % batches_per_attacker,
+        #             buckets_covered,
+        #             args.lam,
+        #             args.alpha,
+        #             args.beta,
+        #         )
+        #     else:
+        #         stdev_value = get_stdev(
+        #             i, buckets_covered, args.lam, args.alpha, args.beta
+        #         )
+        #     # print(i,stdev_value)
+        #     # print(torch.normal(0,stdev_value,size=victim_features.shape, generator=g_cuda))
+        #     victim_features = (
+        #         victim_features
+        #         + torch.normal(
+        #             0, stdev_value, size=victim_features.shape, generator=g_cuda
+        #         ).cuda()
+        #     )
 
-        for sybil_no, sybil in enumerate(sybil_params):
-            if (sybil_no + 2) * batches_per_attacker > i and i >= (
-                sybil_no + 1
-            ) * batches_per_attacker:
-                victim_features = torch.matmul(victim_features, sybil["A"]) + sybil["B"]
-                victim_features *= 1000 if args.model_to_steal == "simsiam" else 1
-                victim_features = sybil["mapper"](victim_features)
-                victim_features /= 1000 if args.model_to_steal == "simsiam" else 1
+        # for sybil_no, sybil in enumerate(sybil_params):
+        #     if (sybil_no + 2) * batches_per_attacker > i and i >= (
+        #         sybil_no + 1
+        #     ) * batches_per_attacker:
+        #         victim_features = torch.matmul(victim_features, sybil["A"]) + sybil["B"]
+        #         victim_features *= 1000 if args.model_to_steal == "simsiam" else 1
+        #         victim_features = sybil["mapper"](victim_features)
+        #         victim_features /= 1000 if args.model_to_steal == "simsiam" else 1
 
-        if args.useaug == "True":
-            augment_images = []
-            for image in images:
-                aug_image = to_pil(image)
-                aug_image = data_transforms(aug_image)
-                aug_image = to_tensor(aug_image)
-                augment_images.append(aug_image)
+        # if args.useaug == "True":
+        augment_images = []
+        for image in images:
+            aug_image = to_pil(image)
+            aug_image = data_transforms(aug_image)
+            aug_image = to_tensor(aug_image)
+            augment_images.append(aug_image)
 
-            augment_images = torch.stack(augment_images)
-            if args.gpu is not None:
-                augment_images = augment_images.cuda(args.gpu, non_blocking=True)
-            stolen_features = stealing_model(augment_images)
-        else:
-            stolen_features = stealing_model(images)
+        augment_images = torch.stack(augment_images)
+        if args.gpu is not None:
+            augment_images = augment_images.cuda(args.gpu, non_blocking=True)
+
+        stolen_features = stealing_model(augment_images)
+        if args.gpu is not None:
+            stolen_features = stolen_features.cuda(args.gpu, non_blocking=True)
+            victim_features = victim_features.cuda(args.gpu, non_blocking=True)
+        # else:
+            # stolen_features = stealing_model(images)
+
 
         if args.losstype == "mse":
             loss = criterion(stolen_features, victim_features)
