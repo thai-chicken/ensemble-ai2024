@@ -536,17 +536,16 @@ def build_stealing_model(args):
     stealing_model = ResNetSimCLRV2(
         base_model=args.arch, out_dim=512, loss=args.losstype, include_mlp=False
     )
-    if args.model_to_steal == "dino":
-        stealing_model.backbone.avgpool = nn.Sequential(
-            nn.Conv2d(2048, 1536, kernel_size=(1, 1), stride=(1, 1), bias=False),
+    stealing_model.backbone.avgpool = nn.Sequential(
+            nn.Conv2d(2048, 512, kernel_size=(1, 1), stride=(1, 1), bias=False),
             nn.AdaptiveAvgPool2d(output_size=(1, 1)),
         )
-        stealing_model.backbone.fc[0] = nn.Linear(
-            in_features=1536, out_features=1536, bias=True
-        )
-        stealing_model.backbone.fc[2] = nn.Linear(
-            in_features=1536, out_features=512, bias=True
-        )
+        # stealing_model.backbone.fc[0] = nn.Linear(
+        #     in_features=1536, out_features=1536, bias=True
+        # )
+        # stealing_model.backbone.fc[2] = nn.Linear(
+        #     in_features=1536, out_features=512, bias=True
+        # )
     print(stealing_model)
     return stealing_model
     # replace with resnet from simsiam
@@ -1188,6 +1187,8 @@ def train(
         # stolen_features = stealing_model(images)
 
         if args.losstype == "mse":
+            print(stolen_features.shape)
+            print(victim_features.shape)
             loss = criterion(stolen_features, victim_features)
         elif args.losstype == "infonce":
             all_features = torch.cat([stolen_features, victim_features], dim=0)
