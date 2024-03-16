@@ -335,6 +335,10 @@ def add_common_arguments(parser):
         type=int,
         help="Number of random columns in projection matrix used to compute buckets for embedding.",
     )
+    parser.add_argument(
+        "--save_dir",
+        type=str,
+    )
 
 
 class TaskDataset(torch.utils.data.Dataset):
@@ -921,16 +925,16 @@ def accuracy(output, target, topk=(1,)):
 
 
 def save_checkpoint(state, is_best, args, model, epoch):
-    os.makedirs(f"{args.pathpre}/{args.model_to_steal}", exist_ok=True)
+    os.makedirs(f"{args.pathpre}/{args.save_dir}", exist_ok=True)
     if is_best:
         torch.save(
             state,
-            f"{args.pathpre}/{args.model_to_steal}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_epoch{epoch}.pth.tar",
+            f"{args.pathpre}/{args.save_dir}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_epoch{epoch}.pth.tar",
         )
         torch.onnx.export(
             model.cpu(),
             torch.randn(1, 3, 32, 32),
-            f"{args.pathpre}/{args.model_to_steal}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_epoch{epoch}.onnx",
+            f"{args.pathpre}/{args.save_dir}/checkpoint_{args.datasetsteal}_{args.losstype}_{args.num_queries}_defence_{args.usedefence}_sybil_{args.n_sybils}_alpha{args.alpha}_beta{args.beta}_lambda{args.lam}_epoch{epoch}.onnx",
             export_params=True,
             input_names=["x"],
         )

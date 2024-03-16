@@ -17,3 +17,4 @@ python3 steal_model.py simsiam  \
 --epochs 100 \
 --gpu 0 \
 --pretrained ./pretrained_weights/checkpoint_0099.pth.tar \
+--save_dir 'random'
