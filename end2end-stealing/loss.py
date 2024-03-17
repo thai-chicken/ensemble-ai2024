@@ -166,13 +166,13 @@ def soft_nn_loss(args,
 
     # Mask out diagonal entries
     diag = torch.diag(torch.ones(batch_size, dtype=torch.bool))
-    diag_mask = torch.logical_not(diag).float().to(args.device)
+    diag_mask = torch.logical_not(diag).float().to("cuda")
     negexpd = torch.mul(negexpd, diag_mask)
 
     # creating mask to sample same class neighboorhood
     pos_mask, _ = build_masks(labels, batch_size)
     pos_mask = pos_mask.type(torch.FloatTensor)
-    pos_mask = pos_mask.to(args.device)
+    pos_mask = pos_mask.to("cuda")
 
     # all class neighborhood
     alcn = torch.sum(negexpd, dim=1)
@@ -182,8 +182,8 @@ def soft_nn_loss(args,
 
     # exclude examples with unique class from loss calculation
     excl = torch.not_equal(torch.sum(pos_mask, dim=1),
-                           torch.zeros(batch_size).to(args.device))
-    excl = excl.type(torch.FloatTensor).to(args.device)
+                           torch.zeros(batch_size).to("cuda"))
+    excl = excl.type(torch.FloatTensor).to("cuda")
 
     loss = torch.divide(sacn, alcn)
     loss = torch.multiply(torch.log(eps + loss), excl)

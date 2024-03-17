@@ -7,13 +7,14 @@ python3 steal_model.py simsiam  \
 --world-size -1 \
 --rank 0  \
 --data data \
---batch-size 25 \
+--batch-size 256 \
 --lr 0.1 \
---losstype 'infonce' \
+--losstype 'mse' \
 --datasetsteal 'imagenet' \
 --workers 8 \
---useaug 'False' \
+--useaug 'True' \
 --temperature 0.25 \
 --epochs 100 \
 --gpu 0 \
---pretrained ./pretrained_weights/checkpoint_0099.pth.tar
+--pretrained ./pretrained_weights/checkpoint_0099.pth.tar \
+--save_dir 'random'
