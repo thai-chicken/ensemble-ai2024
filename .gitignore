@@ -1,3 +1,6 @@
+*.zip
+*.npz
+*.npy
 wandb
 *.pt
 # Byte-compiled / optimized / DLL files
