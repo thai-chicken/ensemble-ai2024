@@ -62,6 +62,13 @@ class ResNetSimCLRV2(nn.Module):
         self.include_mlp = include_mlp
         self.loss = loss
         dim_mlp = self.backbone.fc.in_features
+        import pretrained_microscopy_models as pmm
+        import torch.utils.model_zoo as model_zoo
+        url = pmm.util.get_pretrained_microscopynet_url("resnet50", "image-micronet")
+        state_dict = model_zoo.load_url(url)
+        self.backbone.fc = nn.Linear(2048, 1000)
+        self.backbone.load_state_dict(state_dict)
+
         if self.loss == "symmetrized":
             self.backbone.fc = nn.Sequential(nn.Linear(dim_mlp, dim_mlp),
                                              nn.BatchNorm1d(dim_mlp),
