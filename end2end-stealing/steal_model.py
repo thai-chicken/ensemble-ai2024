@@ -551,13 +551,23 @@ def build_stealing_model(args):
             nn.Conv2d(2048, 512, kernel_size=(1, 1), stride=(1, 1), bias=False),
             nn.AdaptiveAvgPool2d(output_size=(1, 1)),
         )
-        # stealing_model.backbone.fc[0] = nn.Linear(
-        #     in_features=1536, out_features=1536, bias=True
-        # )
-        # stealing_model.backbone.fc[2] = nn.Linear(
-        #     in_features=1536, out_features=512, bias=True
-        # )
+    # stealing_model.backbone.fc[0] = nn.Linear(
+    #     in_features=1536, out_features=1536, bias=True
+    # )
+    # stealing_model.backbone.fc[2] = nn.Linear(
+    #     in_features=1536, out_features=512, bias=True
+    # )
     print(stealing_model)
+    # # Freeze all layers
+    # for param in stealing_model.parameters():
+    #     param.requires_grad_ = False
+
+    # # Unfreeze the last fully connected layer
+    # # Note: The name of the last layer might differ based on the model architecture.
+    # # For ResNet models from torchvision, it's named 'fc'
+    # # stealing_model.backbone.fc.requires_grad = True
+    # for param in stealing_model.backbone.fc.parameters():
+    #     param.requires_grad_ = True
     return stealing_model
     # replace with resnet from simsiam
 
@@ -594,7 +604,7 @@ def define_criterion(args):
 
 def define_optimizer(args, stealing_model, init_lr):
     optimizer = torch.optim.SGD(
-        stealing_model.parameters(),
+        filter(lambda p: p.requires_grad, stealing_model.parameters()),
         init_lr,
         momentum=args.momentum,
         weight_decay=args.weight_decay,
